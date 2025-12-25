@@ -15,8 +15,14 @@ app.post("/mcp/amazon/search", async (req, res) => {
         const { query } = req.body;
         if (!query) return res.status(400).json({ error: "query required" });
 
-        const data = await searchAmazonProducts(query);
-        const products = formatAmazonItems(data);
+        const searchResult = await searchAmazonProducts(query);
+        const products = searchResult.products.map(p => ({
+            title: p.title,
+            price: p.price,
+            image: p.imageUrl,
+            url: p.url
+        }));
+
         res.json({ products });
     } catch (err) {
         console.error(err);
@@ -57,11 +63,16 @@ app.post("/mcp/gemini/interview/process", async (req, res) => {
         // Step 2: Search Amazon for each keyword (Limit to 5 keywords as requested)
         const searchPromises = keywords.slice(0, 5).map(async (kw) => {
             try {
-                const data = await searchAmazonProducts(kw);
-                const items = formatAmazonItems(data);
+                const searchResult = await searchAmazonProducts(kw);
+                const items = searchResult.products.map(p => ({
+                    title: p.title,
+                    price: p.price,
+                    image: p.imageUrl,
+                    url: p.url
+                }));
                 return {
                     keyword: kw,
-                    items: items // Should be top 5 items per `searchAmazonProducts` default param
+                    items: items
                 };
             } catch (error) {
                 console.error(`Search failed for keyword "${kw}":`, error.message);
@@ -78,18 +89,6 @@ app.post("/mcp/gemini/interview/process", async (req, res) => {
         res.status(500).json({ error: "Processing error", details: err.message });
     }
 });
-
-// Helper to format Amazon PAAPI response
-function formatAmazonItems(data) {
-    if (!data.SearchResult || !data.SearchResult.Items) return [];
-
-    return data.SearchResult.Items.map(item => ({
-        title: item.ItemInfo?.Title?.DisplayValue,
-        price: item.Offers?.Listings?.[0]?.Price?.DisplayAmount,
-        image: item.Images?.Primary?.Medium?.URL,
-        url: item.DetailPageURL
-    }));
-}
 
 // Export for Vercel
 export default app;

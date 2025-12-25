@@ -1,95 +1,154 @@
-import crypto from "crypto";
-import axios from "axios";
+import 'dotenv/config';
 
-const ACCESS_KEY = process.env.AMAZON_ACCESS_KEY;
-const SECRET_KEY = process.env.AMAZON_SECRET_KEY;
-const ASSOCIATE_TAG = process.env.AMAZON_ASSOCIATE_TAG;
-
-const REGION = "us-east-1";
-const SERVICE = "ProductAdvertisingAPI";
-const HOST = "webservices.amazon.in";
-const ENDPOINT = `https://${HOST}/paapi5/searchitems`;
-
-function sign(key, msg) {
-  return crypto.createHmac("sha256", key).update(msg).digest();
+/**
+ * Utility function to add delay between API calls
+ */
+function delay(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-function getSignatureKey(key, dateStamp, regionName, serviceName) {
-  const kDate = sign(`AWS4${key}`, dateStamp);
-  const kRegion = sign(kDate, regionName);
-  const kService = sign(kRegion, serviceName);
-  return sign(kService, "aws4_request");
+/**
+ * Retry logic with exponential backoff for rate-limited requests
+ */
+async function retryWithBackoff(fn, maxRetries = 3, baseDelay = 1000) {
+    let lastError = null;
+
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+        try {
+            return await fn();
+        } catch (error) {
+            lastError = error;
+
+            // If it's a rate limit error, wait and retry
+            if (error.message?.includes('429') || error.message?.includes('Too Many Requests')) {
+                const delayMs = baseDelay * Math.pow(2, attempt); // Exponential backoff
+                console.log(`Rate limited, retrying in ${delayMs}ms (attempt ${attempt + 1}/${maxRetries})`);
+                await delay(delayMs);
+            } else {
+                // For other errors, don't retry
+                throw error;
+            }
+        }
+    }
+
+    // All retries exhausted
+    throw lastError || new Error('Max retries exceeded');
 }
 
-export async function searchAmazonProducts(keyword) {
-  const now = new Date();
-  const amzDate = now.toISOString().replace(/[:-]|\.\d{3}/g, "");
-  const dateStamp = amzDate.substring(0, 8);
+/**
+ * Search for products on Amazon
+ */
+export async function searchAmazonProducts(query, maxResults = 10, country = 'US') {
+    const RAPIDAPI_KEY = process.env.RAPIDAPI_KEY;
 
-  const payload = {
-    Keywords: keyword,
-    SearchIndex: "All",
-    ItemCount: 5,
-    Resources: [
-      "ItemInfo.Title",
-      "Offers.Listings.Price",
-      "Images.Primary.Medium",
-      "DetailPageURL"
-    ],
-    PartnerTag: ASSOCIATE_TAG,
-    PartnerType: "Associates"
-  };
+    if (!RAPIDAPI_KEY) {
+        throw new Error('RAPIDAPI_KEY environment variable is not set');
+    }
 
-  const payloadHash = crypto
-    .createHash("sha256")
-    .update(JSON.stringify(payload))
-    .digest("hex");
+    return retryWithBackoff(async () => {
+        const url = new URL('https://real-time-amazon-data.p.rapidapi.com/search');
+        url.searchParams.append('query', query);
+        url.searchParams.append('page', '1');
+        url.searchParams.append('country', country);
 
-  const canonicalHeaders =
-    `content-encoding:amz-1.0\n` +
-    `content-type:application/json; charset=utf-8\n` +
-    `host:${HOST}\n` +
-    `x-amz-date:${amzDate}\n`;
+        const response = await fetch(url.toString(), {
+            method: 'GET',
+            headers: {
+                'X-RapidAPI-Key': RAPIDAPI_KEY,
+                'X-RapidAPI-Host': 'real-time-amazon-data.p.rapidapi.com',
+            },
+        });
 
-  const signedHeaders =
-    "content-encoding;content-type;host;x-amz-date";
+        if (!response.ok) {
+            throw new Error(`Amazon API error: ${response.status} ${response.statusText}`);
+        }
 
-  const canonicalRequest =
-    `POST\n/paapi5/searchitems\n\n` +
-    canonicalHeaders +
-    `\n${signedHeaders}\n${payloadHash}`;
+        const data = await response.json();
 
-  const algorithm = "AWS4-HMAC-SHA256";
-  const credentialScope =
-    `${dateStamp}/${REGION}/${SERVICE}/aws4_request`;
+        if (data.status !== 'OK' || !data.data?.products) {
+            throw new Error('Invalid response from Amazon API');
+        }
 
-  const stringToSign =
-    `${algorithm}\n${amzDate}\n${credentialScope}\n` +
-    crypto.createHash("sha256").update(canonicalRequest).digest("hex");
+        // Transform API response to our format
+        const products = data.data.products
+            .slice(0, maxResults)
+            .map((product) => ({
+                asin: product.asin,
+                title: product.product_title,
+                price: product.product_price || 'N/A',
+                originalPrice: product.product_original_price,
+                currency: product.currency || 'USD',
+                rating: product.product_star_rating,
+                numRatings: product.product_num_ratings || 0,
+                url: product.product_url,
+                imageUrl: product.product_photo,
+                isPrime: product.is_prime || false,
+                isBestSeller: product.is_best_seller || false,
+                isAmazonChoice: product.is_amazon_choice || false,
+                delivery: product.delivery,
+                badge: product.product_badge,
+            }));
 
-  const signingKey = getSignatureKey(
-    SECRET_KEY,
-    dateStamp,
-    REGION,
-    SERVICE
-  );
+        return {
+            products,
+            totalProducts: data.data.total_products,
+            query: data.parameters.query,
+        };
+    }, 3, 2000); // 3 retries with 2 second base delay
+}
 
-  const signature = crypto
-    .createHmac("sha256", signingKey)
-    .update(stringToSign)
-    .digest("hex");
+/**
+ * Get product details by ASIN
+ */
+export async function getAmazonProductDetails(asin, country = 'US') {
+    const RAPIDAPI_KEY = process.env.RAPIDAPI_KEY;
 
-  const authorizationHeader =
-    `${algorithm} Credential=${ACCESS_KEY}/${credentialScope}, ` +
-    `SignedHeaders=${signedHeaders}, Signature=${signature}`;
+    if (!RAPIDAPI_KEY) {
+        throw new Error('RAPIDAPI_KEY environment variable is not set');
+    }
 
-  const headers = {
-    "Content-Type": "application/json; charset=utf-8",
-    "Content-Encoding": "amz-1.0",
-    "X-Amz-Date": amzDate,
-    Authorization: authorizationHeader
-  };
+    try {
+        const url = new URL('https://real-time-amazon-data.p.rapidapi.com/product-details');
+        url.searchParams.append('asin', asin);
+        url.searchParams.append('country', country);
 
-  const response = await axios.post(ENDPOINT, payload, { headers });
-  return response.data;
+        const response = await fetch(url.toString(), {
+            method: 'GET',
+            headers: {
+                'X-RapidAPI-Key': RAPIDAPI_KEY,
+                'X-RapidAPI-Host': 'real-time-amazon-data.p.rapidapi.com',
+            },
+        });
+
+        if (!response.ok) {
+            throw new Error(`Amazon API error: ${response.status} ${response.statusText}`);
+        }
+
+        const data = await response.json();
+
+        if (data.status !== 'OK' || !data.data) {
+            return null;
+        }
+
+        const product = data.data;
+        return {
+            asin: product.asin,
+            title: product.product_title,
+            price: product.product_price || 'N/A',
+            originalPrice: product.product_original_price,
+            currency: product.currency || 'USD',
+            rating: product.product_star_rating,
+            numRatings: product.product_num_ratings || 0,
+            url: product.product_url,
+            imageUrl: product.product_photo,
+            isPrime: product.is_prime || false,
+            isBestSeller: product.is_best_seller || false,
+            isAmazonChoice: product.is_amazon_choice || false,
+            delivery: product.delivery,
+            badge: product.product_badge,
+        };
+    } catch (error) {
+        console.error('Error getting Amazon product details:', error);
+        return null;
+    }
 }
