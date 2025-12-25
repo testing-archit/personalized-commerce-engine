@@ -91,6 +91,13 @@ function formatAmazonItems(data) {
     }));
 }
 
-app.listen(3333, () =>
-    console.log("Amazon MCP server running on port 3333")
-);
+// Export for Vercel
+export default app;
+
+// Only listen if run directly (local development)
+if (process.env.NODE_ENV !== 'production') {
+    const PORT = process.env.PORT || 3333;
+    app.listen(PORT, () =>
+        console.log(`Amazon MCP server running on port ${PORT}`)
+    );
+}
