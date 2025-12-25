@@ -8,6 +8,7 @@ import {
 
 const app = express();
 app.use(express.json());
+app.use(express.static('public'));
 
 // --- Existing Endpoint ---
 app.post("/mcp/amazon/search", async (req, res) => {

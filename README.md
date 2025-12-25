@@ -51,6 +51,9 @@ node server.js
 
 The server will run on `http://localhost:3333`.
 
+### 💬 Use the Chat Interface (New!)
+Open **[http://localhost:3333](http://localhost:3333)** in your browser to use the AI Chat Assistant.
+
 ### API Endpoints
 
 - **Start Interview**
