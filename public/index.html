@@ -34,7 +34,6 @@
             overflow: hidden;
         }
 
-        /* Header */
         header {
             background: rgba(30, 41, 59, 0.8);
             backdrop-filter: blur(10px);
@@ -58,7 +57,6 @@
             -webkit-text-fill-color: transparent;
         }
 
-        /* Chat Area */
         main {
             flex: 1;
             margin-top: 60px;
@@ -94,7 +92,6 @@
             margin-top: auto;
         }
 
-        /* Input Area */
         .input-container {
             padding: 1.5rem 2rem;
             background: var(--bg-color);
@@ -149,7 +146,6 @@
             cursor: not-allowed;
         }
 
-        /* Loading */
         .typing-indicator {
             display: inline-flex;
             gap: 4px;
@@ -185,7 +181,6 @@
             }
         }
 
-        /* Scrollbar */
         ::-webkit-scrollbar {
             width: 8px;
         }
@@ -207,7 +202,6 @@
     </header>
 
     <main id="chat-container">
-        <!-- Messages will appear here -->
         <div class="message bot">
             <div class="avatar">🤖</div>
             <div class="bubble">
@@ -230,7 +224,6 @@
         const input = document.getElementById('user-input');
         const sendBtn = document.getElementById('send-btn');
 
-        // State Machine: 'INIT' -> 'WAITING_ANSWERS' -> 'DONE'
         let currentState = 'INIT';
         let conversationHistory = [];
 
@@ -239,7 +232,6 @@
             const message = input.value.trim();
             if (!message) return;
 
-            // Add user message
             addMessage(message, 'user');
             input.value = '';
             setLoading(true);
@@ -250,7 +242,6 @@
                 } else if (currentState === 'WAITING_ANSWERS') {
                     await handleProcessState(message);
                 } else {
-                    // Reset if done
                     currentState = 'INIT';
                     await handleInitState(message);
                 }
@@ -263,7 +254,6 @@
         });
 
         async function handleInitState(query) {
-            // Call start interview
             const res = await fetch('/mcp/gemini/interview/start', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -281,14 +271,11 @@
                 currentState = 'WAITING_ANSWERS';
             } else {
                 addMessage("I couldn't generate questions. Let me try searching directly.", 'bot');
-                // Fallback to direct search? For now just reset.
                 currentState = 'INIT';
             }
         }
 
         async function handleProcessState(answers) {
-            // For now, we take the whole user input as "answers"
-            // The backend Gemimi prompt handles unstructured text well.
             const res = await fetch('/mcp/gemini/interview/process', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -301,7 +288,7 @@
 
             addMessage("Here are the top products I found for you:", 'bot');
 
-            // Collect all items from results
+
             const allItems = [];
             if (data.results) {
                 data.results.forEach(r => {
@@ -309,8 +296,7 @@
                 });
             }
 
-            // Remove duplicates by ASIN or URL if needed, but for now just show top picks
-            // Limit to top 10 unique
+
             const uniqueItems = [];
             const urls = new Set();
             for (const item of allItems) {
@@ -325,8 +311,7 @@
             } else {
                 addMessage("I couldn't find any products matching those specific criteria.", 'bot');
             }
-
-            currentState = 'INIT'; // Reset for next search
+            currentState = 'INIT';
             addMessage("Feel free to ask for something else!", 'bot');
         }
 
@@ -340,7 +325,6 @@
 
             const bubble = document.createElement('div');
             bubble.className = 'bubble';
-            // Simple line break handling
             bubble.innerHTML = text.replace(/\n/g, '<br>');
 
             div.appendChild(avatar);
@@ -382,17 +366,17 @@
                 grid.appendChild(card);
             });
 
-            // Wrap in a bot message container for alignment
+
             const container = document.createElement('div');
             container.className = 'message bot';
             container.style.width = '100%';
-            container.style.maxWidth = '100%'; // Allow full width for grid
+            container.style.maxWidth = '100%';
 
             const avatar = document.createElement('div');
             avatar.className = 'avatar';
             avatar.textContent = '🤖';
 
-            // Override bubble style for grid
+
             const bubble = document.createElement('div');
             bubble.style.flex = '1';
 
@@ -409,7 +393,6 @@
             sendBtn.textContent = isLoading ? '...' : 'Send';
             input.disabled = isLoading;
             if (isLoading) {
-                // Optional: Add temp loading bubble
             } else {
                 input.focus();
             }

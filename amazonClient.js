@@ -1,15 +1,9 @@
 import 'dotenv/config';
 
-/**
- * Utility function to add delay between API calls
- */
 function delay(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-/**
- * Retry logic with exponential backoff for rate-limited requests
- */
 async function retryWithBackoff(fn, maxRetries = 3, baseDelay = 1000) {
     let lastError = null;
 
@@ -19,9 +13,8 @@ async function retryWithBackoff(fn, maxRetries = 3, baseDelay = 1000) {
         } catch (error) {
             lastError = error;
 
-            // If it's a rate limit error, wait and retry
             if (error.message?.includes('429') || error.message?.includes('Too Many Requests')) {
-                const delayMs = baseDelay * Math.pow(2, attempt); // Exponential backoff
+                const delayMs = baseDelay * Math.pow(2, attempt);
                 console.log(`Rate limited, retrying in ${delayMs}ms (attempt ${attempt + 1}/${maxRetries})`);
                 await delay(delayMs);
             } else {
@@ -31,13 +24,9 @@ async function retryWithBackoff(fn, maxRetries = 3, baseDelay = 1000) {
         }
     }
 
-    // All retries exhausted
     throw lastError || new Error('Max retries exceeded');
 }
 
-/**
- * Search for products on Amazon
- */
 export async function searchAmazonProducts(query, maxResults = 10, country = 'US') {
     const RAPIDAPI_KEY = process.env.RAPIDAPI_KEY;
 
@@ -69,7 +58,6 @@ export async function searchAmazonProducts(query, maxResults = 10, country = 'US
             throw new Error('Invalid response from Amazon API');
         }
 
-        // Transform API response to our format
         const products = data.data.products
             .slice(0, maxResults)
             .map((product) => ({
@@ -94,12 +82,9 @@ export async function searchAmazonProducts(query, maxResults = 10, country = 'US
             totalProducts: data.data.total_products,
             query: data.parameters.query,
         };
-    }, 3, 2000); // 3 retries with 2 second base delay
+    }, 3, 2000);
 }
 
-/**
- * Get product details by ASIN
- */
 export async function getAmazonProductDetails(asin, country = 'US') {
     const RAPIDAPI_KEY = process.env.RAPIDAPI_KEY;
 
